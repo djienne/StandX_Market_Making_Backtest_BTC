@@ -4,7 +4,7 @@
 
 Market-making backtests with OBI (Order Book Imbalance) and GLFT strategies on the StandX decentralized crypto exchange.
 
-![Backtest Results](plots/obi_optuna_best_obi_mm_opt_balance_equity.png)
+![Backtest Results](plots/obi_optuna_best_obi_mm_opt_position_equity.png)
 
 ## Project Layout
 
