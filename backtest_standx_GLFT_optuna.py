@@ -19,7 +19,7 @@ from optuna.samplers import TPESampler
 
 import backtest_standx_GLFT as glft
 from convert_standx import convert_parquet_to_npz
-from backtest_utils import load_threads_from_config
+from backtest_utils import load_threads_from_config, save_plots
 from backtest_common import BacktestAPI
 
 
@@ -167,6 +167,62 @@ def _run_single_backtest(
 
     sharpe = _compute_sharpe(records)
     return BacktestResult(equity, trading_volume, num_trades, sharpe)
+
+
+def _run_backtest_with_records(
+    ctx: BacktestContext,
+    api: BacktestAPI,
+    gamma: float,
+    delta: float,
+    adj2: float,
+) -> np.ndarray | None:
+    """Run backtest and return records for plotting."""
+    asset = (
+        api.asset_cls()
+        .data([str(ctx.npz_path)])
+        .linear_asset(1.0)
+        .constant_order_latency(ctx.latency_ns, ctx.latency_ns)
+        .risk_adverse_queue_model()
+        .no_partial_fill_exchange()
+        .trading_value_fee_model(ctx.maker_fee, ctx.taker_fee)
+        .tick_size(ctx.tick_size)
+        .lot_size(ctx.lot_size)
+        .last_trades_capacity(10000)
+    )
+
+    hbt = api.backtest_cls([asset])
+    recorder = api.recorder_cls(1, ctx.estimated)
+    try:
+        glft.gridtrading_glft_mm(
+            hbt,
+            recorder.recorder,
+            ctx.record_every,
+            ctx.step_ns,
+            ctx.max_steps,
+            ctx.order_qty_dollar,
+            ctx.max_position_dollar,
+            ctx.grid_num,
+            gamma,
+            delta,
+            ctx.adj1,
+            adj2,
+            ctx.update_interval_steps,
+            ctx.window_steps,
+            ctx.window_seconds,
+            ctx.vol_scale,
+        )
+    finally:
+        hbt.close()
+
+    records = recorder.get(0)
+    if len(records) == 0:
+        return None
+
+    valid_mask = np.isfinite(records["price"])
+    if not np.any(valid_mask):
+        return None
+
+    return records[valid_mask]
 
 
 def load_config(config_path: Path) -> dict[str, Any]:
@@ -489,6 +545,25 @@ def main() -> None:
         )
 
     print(f"\nresults saved to: {storage}")
+
+    # Generate plots for best parameters
+    plots_dir = Path(config.get("backtest", {}).get("plots_dir", "plots"))
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\nrunning final backtest with best parameters for plots...")
+    best_gamma = best.params["gamma"]
+    best_delta = best.params["delta"]
+    best_adj2 = best.params["adj2"]
+
+    api = _load_backtest_api()
+    records = _run_backtest_with_records(ctx, api, best_gamma, best_delta, best_adj2)
+
+    if records is not None and len(records) > 0:
+        plot_name = f"glft_optuna_best_{study_name}"
+        save_plots(records, plots_dir, plot_name)
+        print(f"plots saved to: {plots_dir}/{plot_name}_balance_equity.png")
+    else:
+        print("no valid records for plotting")
 
 
 if __name__ == "__main__":

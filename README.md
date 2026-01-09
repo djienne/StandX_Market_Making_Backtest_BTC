@@ -1,6 +1,10 @@
 # StandX Market Making Backtest
 
-Utilities for converting order book + trade parquet files into hftbacktest NPZ format, then running market-making backtests with OBI (Order Book Imbalance) and GLFT strategies.
+> **Support this project:** Sign up on StandX using [this referral link](https://standx.com/referral?code=FREQTRADE)
+
+Market-making backtests with OBI (Order Book Imbalance) and GLFT strategies on the StandX decentralized crypto exchange.
+
+![Backtest Results](plots/obi_optuna_best_obi_mm_opt_balance_equity.png)
 
 ## Project Layout
 
