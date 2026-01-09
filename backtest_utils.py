@@ -61,8 +61,13 @@ def save_plots(
     plots_dir: Path,
     stem: str,
     include_trading_value: bool = True,
+    title: str | None = None,
 ) -> None:
-    """Save equity, position, and trading value plots."""
+    """Save equity, position, and trading value plots.
+
+    Args:
+        title: Optional title/subtitle to display on plots (e.g. parameter values)
+    """
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -93,6 +98,8 @@ def save_plots(
 
     # Balance and equity plot
     fig, ax = plt.subplots()
+    if title:
+        fig.suptitle(title, fontsize=10)
     ax.plot(timestamps, balance, label="balance (quote)")
     ax.plot(timestamps, equity, label="equity (quote)")
     ax.set_xlabel("time")
@@ -105,6 +112,8 @@ def save_plots(
 
     # Position and equity dual-axis plot
     fig, ax1 = plt.subplots()
+    if title:
+        fig.suptitle(title, fontsize=10)
     ax1.plot(timestamps, equity, color="tab:blue", label="equity (quote)")
     ax1.set_xlabel("time")
     ax1.set_ylabel("equity (quote)", color="tab:blue")
@@ -123,6 +132,8 @@ def save_plots(
     # Trading value plot (optional)
     if has_trading_value and np.any(np.isfinite(trading_value)):
         fig, ax = plt.subplots()
+        if title:
+            fig.suptitle(title, fontsize=10)
         ax.plot(timestamps, trading_value, label="trading_value")
         ax.set_xlabel("time")
         ax.set_ylabel("cumulative trading value (quote)")

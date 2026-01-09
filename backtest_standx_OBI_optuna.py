@@ -588,7 +588,11 @@ def main() -> None:
 
     if records is not None and len(records) > 0:
         plot_name = f"obi_optuna_best_{study_name}"
-        save_plots(records, plots_dir, plot_name)
+        plot_title = (
+            f"OBI Best: vol_to_half_spread={best_vol:.2f}, "
+            f"skew={best_skew:.2f}, c1_ticks={best_c1_ticks:.1f}"
+        )
+        save_plots(records, plots_dir, plot_name, title=plot_title)
         print(f"plots saved to: {plots_dir}/{plot_name}_balance_equity.png")
     else:
         print("no valid records for plotting")
