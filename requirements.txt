@@ -1,0 +1,16 @@
+# Core dependencies
+numpy>=1.24,<3
+pandas>=2.0
+pyarrow>=14.0
+
+# Performance (JIT compilation)
+numba>=0.58
+
+# Visualization
+matplotlib>=3.7
+
+# Bayesian optimization
+optuna>=3.4
+
+# Build tools (for compiling hftbacktest Rust extension)
+maturin>=1.4

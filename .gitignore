@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# Generated files (keep source parquet data)
+data/*.npz
+data/*.npz.meta.json
+
+# Optuna databases (can be regenerated)
+*.db
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Plots (can be regenerated)
+plots/*.png
+plots/*.csv
+
+# Rust build artifacts in hftbacktest
+hftbacktest/target/
+hftbacktest/py-hftbacktest/target/

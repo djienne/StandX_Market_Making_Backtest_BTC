@@ -1,0 +1,29 @@
+{
+  "search_space": {
+    "vol_to_half_spread": {"min": 2.0, "max": 100.0, "log": false},
+    "skew": {"min": 0.1, "max": 100.0, "log": true},
+    "c1_ticks": {"min": 10, "max": 1000, "log": false}
+  },
+  "optimization": {
+    "n_trials": 200,
+    "study_name": "obi_mm_opt",
+    "storage": "sqlite:///optuna_obi.db",
+    "min_trades": 10,
+    "objective_metric": "equity"
+  },
+  "backtest": {
+    "data_dir": "data",
+    "out": "data/btc_hft_obi.npz",
+    "max_rows": 100000,
+    "latency_ns": 1000000,
+    "step_ns": 100000000,
+    "window_steps": 6000,
+    "update_interval_steps": 50,
+    "order_qty_dollar": 20.0,
+    "max_position_dollar": 500.0,
+    "looking_depth": 0.025,
+    "grid_num": 1,
+    "record_every": 10,
+    "roi_pad": 0.02
+  }
+}

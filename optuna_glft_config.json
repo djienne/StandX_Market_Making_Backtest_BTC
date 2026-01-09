@@ -1,0 +1,28 @@
+{
+  "search_space": {
+    "gamma": {"min": 0.001, "max": 0.5, "log": true},
+    "delta": {"min": 1.0, "max": 20.0, "log": false},
+    "adj2": {"min": 0.01, "max": 0.5, "log": true}
+  },
+  "optimization": {
+    "n_trials": 200,
+    "study_name": "glft_mm_opt",
+    "storage": "sqlite:///optuna_glft.db",
+    "min_trades": 10,
+    "objective_metric": "equity"
+  },
+  "backtest": {
+    "data_dir": "data",
+    "out": "data/btc_hft_glft.npz",
+    "max_rows": null,
+    "latency_ns": 1000000,
+    "step_ns": 100000000,
+    "window_steps": 6000,
+    "update_interval_steps": 50,
+    "order_qty_dollar": 20.0,
+    "max_position_dollar": 400.0,
+    "grid_num": 5,
+    "adj1": 1.0,
+    "record_every": 10
+  }
+}
