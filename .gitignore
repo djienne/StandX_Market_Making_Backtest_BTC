@@ -35,8 +35,9 @@ build/
 .DS_Store
 Thumbs.db
 
-# Plots (can be regenerated)
+# Plots (can be regenerated, except README showcase)
 plots/*.png
+!plots/obi_optuna_best_obi_mm_opt_balance_equity.png
 plots/*.csv
 
 # Rust build artifacts in hftbacktest

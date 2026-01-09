@@ -19,7 +19,7 @@ from optuna.samplers import TPESampler
 
 import backtest_standx_OBI as obi
 from convert_standx import convert_parquet_to_npz
-from backtest_utils import load_threads_from_config
+from backtest_utils import load_threads_from_config, save_plots
 from backtest_common import infer_roi_bounds, BacktestAPI
 
 
@@ -175,6 +175,67 @@ def _run_single_backtest(
 
     sharpe = _compute_sharpe(records)
     return BacktestResult(equity, num_trades, sharpe)
+
+
+def _run_backtest_with_records(
+    ctx: BacktestContext,
+    api: BacktestAPI,
+    vol_to_half_spread: float,
+    skew: float,
+    c1: float,
+) -> np.ndarray | None:
+    """Run backtest and return records for plotting."""
+    asset = (
+        api.asset_cls()
+        .data([str(ctx.npz_path)])
+        .linear_asset(1.0)
+        .constant_order_latency(ctx.latency_ns, ctx.latency_ns)
+        .risk_adverse_queue_model()
+        .no_partial_fill_exchange()
+        .trading_value_fee_model(ctx.maker_fee, ctx.taker_fee)
+        .tick_size(ctx.tick_size)
+        .lot_size(ctx.lot_size)
+        .roi_lb(ctx.roi_lb)
+        .roi_ub(ctx.roi_ub)
+        .last_trades_capacity(10000)
+    )
+
+    hbt = api.backtest_cls([asset])
+    recorder = api.recorder_cls(1, ctx.estimated)
+    try:
+        obi.obi_mm(
+            hbt,
+            recorder.recorder,
+            ctx.record_every,
+            ctx.step_ns,
+            ctx.max_steps,
+            float(vol_to_half_spread),
+            ctx.min_grid_step,
+            0.0,  # half_spread
+            0.0,  # half_spread_bps
+            skew,
+            c1,
+            ctx.looking_depth,
+            ctx.window_steps,
+            ctx.update_interval_steps,
+            ctx.order_qty_dollar,
+            ctx.max_position_dollar,
+            ctx.grid_num,
+            ctx.roi_lb,
+            ctx.roi_ub,
+        )
+    finally:
+        hbt.close()
+
+    records = recorder.get(0)
+    if len(records) == 0:
+        return None
+
+    valid_mask = np.isfinite(records["price"])
+    if not np.any(valid_mask):
+        return None
+
+    return records[valid_mask]
 
 
 def load_config(config_path: Path) -> dict[str, Any]:
@@ -511,6 +572,26 @@ def main() -> None:
         )
 
     print(f"\nresults saved to: {storage}")
+
+    # Generate plots for best parameters
+    plots_dir = Path(config.get("backtest", {}).get("plots_dir", "plots"))
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\nrunning final backtest with best parameters for plots...")
+    best_vol = best.params["vol_to_half_spread"]
+    best_skew = best.params["skew"]
+    best_c1_ticks = best.params["c1_ticks"]
+    best_c1 = best_c1_ticks * ctx.tick_size
+
+    api = _load_backtest_api()
+    records = _run_backtest_with_records(ctx, api, best_vol, best_skew, best_c1)
+
+    if records is not None and len(records) > 0:
+        plot_name = f"obi_optuna_best_{study_name}"
+        save_plots(records, plots_dir, plot_name)
+        print(f"plots saved to: {plots_dir}/{plot_name}_balance_equity.png")
+    else:
+        print("no valid records for plotting")
 
 
 if __name__ == "__main__":
