@@ -1,0 +1,5 @@
+  7. Profile First
+
+  Before optimizing, profile to find actual bottlenecks:
+
+  python -m cProfile -s cumtime backtest_lighter_OBI.py

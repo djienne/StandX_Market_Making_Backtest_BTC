@@ -1,0 +1,5 @@
+{
+  "threads": 2,
+  "symbol": "BTC-USD",
+  "max_rows": 10000000
+}
