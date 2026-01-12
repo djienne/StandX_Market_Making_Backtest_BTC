@@ -550,8 +550,11 @@ def main() -> None:
 
     if existing_trials > 0 and load_if_exists:
         stored_fingerprint = study.user_attrs.get("fingerprint")
-        if stored_fingerprint and stored_fingerprint != current_fingerprint:
-            print(f"data/config changed (was {stored_fingerprint}), starting fresh study")
+        if stored_fingerprint != current_fingerprint:
+            if stored_fingerprint:
+                print(f"data/config changed (was {stored_fingerprint}), starting fresh study")
+            else:
+                print(f"legacy study without fingerprint, starting fresh study")
             # Delete storage and recreate
             if use_journal:
                 journal_file = Path(journal_path)
