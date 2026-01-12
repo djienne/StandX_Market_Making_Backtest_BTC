@@ -19,7 +19,7 @@ from optuna.samplers import TPESampler
 
 import backtest_standx_GLFT as glft
 from convert_standx import convert_parquet_to_npz
-from backtest_utils import load_threads_from_config, load_fees_from_config, save_plots
+from backtest_utils import load_threads_from_config, load_fees_from_config, save_plots, format_ns
 from backtest_common import BacktestAPI
 
 
@@ -260,7 +260,10 @@ def _prepare_context(config: dict[str, Any]) -> BacktestContext | None:
     update_interval_steps = max(1, int(bt_config.get("update_interval_steps", 50)))
     record_every = max(1, int(bt_config.get("record_every", 10)))
 
-    duration = int(data["local_ts"].max() - data["local_ts"].min())
+    start_ts = int(data["local_ts"].min())
+    end_ts = int(data["local_ts"].max())
+    duration = end_ts - start_ts
+    print(f"backtest_period={format_ns(start_ts)} to {format_ns(end_ts)}")
     max_steps = max(10_000, int(duration / step_ns) + 10_000)
     estimated = max(10_000, int(max_steps / record_every) + 10_000)
     window_seconds = window_steps * step_ns / 1_000_000_000
