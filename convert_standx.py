@@ -296,7 +296,8 @@ def align_time_window(
     price_df = price_df[(price_df["ts_ns"] >= window_start) & (price_df["ts_ns"] <= window_end)]
     trade_df = trade_df[(trade_df["ts_ns"] >= window_start) & (trade_df["ts_ns"] <= window_end)]
 
-    if max_rows is not None:
+    # max_rows: None or -1 means use all data
+    if max_rows is not None and max_rows > 0:
         price_df = price_df.head(max_rows)
         if not price_df.empty:
             window_start = int(price_df["ts_ns"].iloc[0])

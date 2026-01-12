@@ -14,7 +14,7 @@
   "backtest": {
     "data_dir": "data",
     "out": "data/btc_hft_obi.npz",
-    "max_rows": 100000,
+    "max_rows": -1,
     "latency_ns": 1000000,
     "step_ns": 100000000,
     "window_steps": 6000,
