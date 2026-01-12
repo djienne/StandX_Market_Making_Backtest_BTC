@@ -187,6 +187,47 @@ def load_threads_from_config(config_path: Path, default_threads: int = 4) -> int
     return default_threads
 
 
+def compute_study_fingerprint(config: dict, npz_meta_path: Path) -> str:
+    """Compute a fingerprint of study config + data for cache invalidation.
+
+    Returns a hash that changes when:
+    - NPZ data changes (via meta.json fingerprint)
+    - Search space parameters change
+    - Key backtest parameters change
+    """
+    import hashlib
+
+    hasher = hashlib.sha256()
+
+    # Include NPZ data fingerprint from meta.json
+    if npz_meta_path.exists():
+        try:
+            meta = json.loads(npz_meta_path.read_text(encoding="utf-8"))
+            hasher.update(f"npz:{meta.get('input_fingerprint', '')}".encode())
+            hasher.update(f"max_rows:{meta.get('max_rows')}".encode())
+        except Exception:
+            hasher.update(b"npz:unknown")
+    else:
+        hasher.update(b"npz:missing")
+
+    # Include search space (sorted for consistency)
+    search_space = config.get("search_space", {})
+    hasher.update(json.dumps(search_space, sort_keys=True).encode())
+
+    # Include key backtest parameters that affect results
+    bt_config = config.get("backtest", {})
+    for key in ["latency_ns", "step_ns", "order_qty_dollar", "max_position_dollar",
+                "grid_num", "window_steps", "update_interval_steps"]:
+        hasher.update(f"{key}:{bt_config.get(key)}".encode())
+
+    # Include optimization parameters
+    opt_config = config.get("optimization", {})
+    hasher.update(f"objective:{opt_config.get('objective_metric')}".encode())
+    hasher.update(f"min_trades:{opt_config.get('min_trades')}".encode())
+
+    return hasher.hexdigest()[:16]  # Short hash for readability
+
+
 def load_fees_from_config(
     config_path: Path,
     default_maker_fee: float = 0.0001,

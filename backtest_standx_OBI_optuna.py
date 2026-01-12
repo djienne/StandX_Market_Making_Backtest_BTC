@@ -19,7 +19,13 @@ from optuna.samplers import TPESampler
 
 import backtest_standx_OBI as obi
 from convert_standx import convert_parquet_to_npz
-from backtest_utils import load_threads_from_config, load_fees_from_config, save_plots, format_ns
+from backtest_utils import (
+    load_threads_from_config,
+    load_fees_from_config,
+    save_plots,
+    format_ns,
+    compute_study_fingerprint,
+)
 from backtest_common import infer_roi_bounds, BacktestAPI
 
 
@@ -499,35 +505,71 @@ def main() -> None:
     print(f"grid_num={ctx.grid_num} (fixed)")
     print(f"roi_lb={ctx.roi_lb:.2f} roi_ub={ctx.roi_ub:.2f}")
 
+    # Compute fingerprint for data/config change detection
+    npz_meta_path = ctx.npz_path.with_suffix(ctx.npz_path.suffix + ".meta.json")
+    current_fingerprint = compute_study_fingerprint(config, npz_meta_path)
+    print(f"study_fingerprint={current_fingerprint}")
+
     # Create or load study
     # Use JournalStorage for parallel runs (n_jobs > 1) to avoid SQLite locking issues
     sampler = TPESampler(seed=args.seed)
     actual_storage_path = storage  # Track for final message
-    if n_jobs > 1 and storage.startswith("sqlite:///"):
-        # Convert SQLite path to journal file path for parallel-safe storage
+    use_journal = n_jobs > 1 and storage.startswith("sqlite:///")
+
+    if use_journal:
         journal_path = storage.replace("sqlite:///", "").replace(".db", "_journal.log")
         actual_storage_path = journal_path
-        print(f"using JournalStorage for parallel execution: {journal_path}")
-        storage_obj = optuna.storages.JournalStorage(
-            optuna.storages.JournalFileStorage(journal_path)
-        )
-        study = optuna.create_study(
-            direction="maximize",
-            study_name=study_name,
-            storage=storage_obj,
-            load_if_exists=load_if_exists,
-            sampler=sampler,
-        )
     else:
-        study = optuna.create_study(
-            direction="maximize",
-            study_name=study_name,
-            storage=storage,
-            load_if_exists=load_if_exists,
-            sampler=sampler,
-        )
+        journal_path = None
 
+    def create_study_instance(load_existing: bool):
+        if use_journal:
+            print(f"using JournalStorage for parallel execution: {journal_path}")
+            storage_obj = optuna.storages.JournalStorage(
+                optuna.storages.JournalFileStorage(journal_path)
+            )
+            return optuna.create_study(
+                direction="maximize",
+                study_name=study_name,
+                storage=storage_obj,
+                load_if_exists=load_existing,
+                sampler=sampler,
+            )
+        else:
+            return optuna.create_study(
+                direction="maximize",
+                study_name=study_name,
+                storage=storage,
+                load_if_exists=load_existing,
+                sampler=sampler,
+            )
+
+    # Check if existing study has matching fingerprint
+    study = create_study_instance(load_if_exists)
     existing_trials = len(study.trials)
+
+    if existing_trials > 0 and load_if_exists:
+        stored_fingerprint = study.user_attrs.get("fingerprint")
+        if stored_fingerprint and stored_fingerprint != current_fingerprint:
+            print(f"data/config changed (was {stored_fingerprint}), starting fresh study")
+            # Delete storage and recreate
+            if use_journal:
+                journal_file = Path(journal_path)
+                lock_file = Path(journal_path + ".lock")
+                if journal_file.exists():
+                    journal_file.unlink()
+                if lock_file.exists():
+                    lock_file.unlink()
+            elif storage.startswith("sqlite:///"):
+                db_path = Path(storage.replace("sqlite:///", ""))
+                if db_path.exists():
+                    db_path.unlink()
+            study = create_study_instance(False)
+            existing_trials = 0
+
+    # Store/update fingerprint
+    study.set_user_attr("fingerprint", current_fingerprint)
+
     if existing_trials > 0:
         print(f"resuming from {existing_trials} existing trials")
 
