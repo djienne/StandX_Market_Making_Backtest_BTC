@@ -19,7 +19,7 @@ from optuna.samplers import TPESampler
 
 import backtest_standx_OBI as obi
 from convert_standx import convert_parquet_to_npz
-from backtest_utils import load_threads_from_config, save_plots
+from backtest_utils import load_threads_from_config, load_fees_from_config, save_plots
 from backtest_common import infer_roi_bounds, BacktestAPI
 
 
@@ -42,8 +42,8 @@ class BacktestContext:
     max_steps: int
     estimated: int
     grid_num: int
-    maker_fee: float = 0.00002
-    taker_fee: float = 0.0002
+    maker_fee: float
+    taker_fee: float
 
 
 def _load_backtest_api() -> BacktestAPI:
@@ -285,6 +285,10 @@ def _prepare_context(config: dict[str, Any]) -> BacktestContext | None:
     max_steps = max(10_000, int(duration / step_ns) + 10_000)
     estimated = max(10_000, int(max_steps / record_every) + 10_000)
 
+    # Load fees from config.json
+    maker_fee, taker_fee = load_fees_from_config(Path("config.json"))
+    print(f"maker_fee={maker_fee:.4%} taker_fee={taker_fee:.4%}")
+
     return BacktestContext(
         npz_path=out_path,
         tick_size=tick_size,
@@ -303,6 +307,8 @@ def _prepare_context(config: dict[str, Any]) -> BacktestContext | None:
         max_steps=max_steps,
         estimated=estimated,
         grid_num=bt_config.get("grid_num", 1),
+        maker_fee=maker_fee,
+        taker_fee=taker_fee,
     )
 
 
@@ -470,6 +476,11 @@ def main() -> None:
             if db_path.exists():
                 db_path.unlink()
                 print(f"deleted existing database: {db_path}")
+            # Also delete journal file if it exists (used for parallel runs)
+            journal_path = Path(storage.replace("sqlite:///", "").replace(".db", "_journal.log"))
+            if journal_path.exists():
+                journal_path.unlink()
+                print(f"deleted existing journal: {journal_path}")
         load_if_exists = False
 
     objective_metric = opt_config.get("objective_metric", "equity")
@@ -486,14 +497,32 @@ def main() -> None:
     print(f"roi_lb={ctx.roi_lb:.2f} roi_ub={ctx.roi_ub:.2f}")
 
     # Create or load study
+    # Use JournalStorage for parallel runs (n_jobs > 1) to avoid SQLite locking issues
     sampler = TPESampler(seed=args.seed)
-    study = optuna.create_study(
-        direction="maximize",
-        study_name=study_name,
-        storage=storage,
-        load_if_exists=load_if_exists,
-        sampler=sampler,
-    )
+    actual_storage_path = storage  # Track for final message
+    if n_jobs > 1 and storage.startswith("sqlite:///"):
+        # Convert SQLite path to journal file path for parallel-safe storage
+        journal_path = storage.replace("sqlite:///", "").replace(".db", "_journal.log")
+        actual_storage_path = journal_path
+        print(f"using JournalStorage for parallel execution: {journal_path}")
+        storage_obj = optuna.storages.JournalStorage(
+            optuna.storages.JournalFileStorage(journal_path)
+        )
+        study = optuna.create_study(
+            direction="maximize",
+            study_name=study_name,
+            storage=storage_obj,
+            load_if_exists=load_if_exists,
+            sampler=sampler,
+        )
+    else:
+        study = optuna.create_study(
+            direction="maximize",
+            study_name=study_name,
+            storage=storage,
+            load_if_exists=load_if_exists,
+            sampler=sampler,
+        )
 
     existing_trials = len(study.trials)
     if existing_trials > 0:
@@ -571,7 +600,7 @@ def main() -> None:
             f"{num_trades}"
         )
 
-    print(f"\nresults saved to: {storage}")
+    print(f"\nresults saved to: {actual_storage_path}")
 
     # Generate plots for best parameters
     plots_dir = Path(config.get("backtest", {}).get("plots_dir", "plots"))

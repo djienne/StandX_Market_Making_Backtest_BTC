@@ -187,6 +187,31 @@ def load_threads_from_config(config_path: Path, default_threads: int = 4) -> int
     return default_threads
 
 
+def load_fees_from_config(
+    config_path: Path,
+    default_maker_fee: float = 0.0001,
+    default_taker_fee: float = 0.0004,
+) -> tuple[float, float]:
+    """Load maker and taker fees from config file, with fallback to defaults.
+
+    Returns:
+        Tuple of (maker_fee, taker_fee)
+    """
+    maker_fee = default_maker_fee
+    taker_fee = default_taker_fee
+    if not config_path.exists():
+        return maker_fee, taker_fee
+    try:
+        cfg = json.loads(config_path.read_text(encoding="utf-8"))
+        if "maker_fee" in cfg:
+            maker_fee = float(cfg["maker_fee"])
+        if "taker_fee" in cfg:
+            taker_fee = float(cfg["taker_fee"])
+    except Exception:
+        pass
+    return maker_fee, taker_fee
+
+
 def extract_backtest_results(records: np.ndarray) -> Optional[dict]:
     """Extract summary statistics from backtest records.
 
