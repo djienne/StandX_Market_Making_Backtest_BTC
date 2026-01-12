@@ -15,6 +15,7 @@ from backtest_utils import (
     fmt_float,
     progress_str,
     load_threads_from_config,
+    load_fees_from_config,
 )
 from backtest_common import BacktestAPI
 
@@ -37,8 +38,8 @@ class BacktestContext:
     window_seconds: float
     vol_scale: float
     estimated: int
-    maker_fee: float = 0.00002
-    taker_fee: float = 0.0002
+    maker_fee: float
+    taker_fee: float
 
 
 def _load_backtest_api() -> BacktestAPI:
@@ -150,6 +151,9 @@ def _prepare_context(args: argparse.Namespace) -> BacktestContext | None:
     window_seconds = args.window_steps * args.step_ns / 1_000_000_000
     vol_scale = np.sqrt(1_000_000_000 / args.step_ns)
 
+    maker_fee, taker_fee = load_fees_from_config(Path("config.json"))
+    print(f"maker_fee={maker_fee:.4%} taker_fee={taker_fee:.4%}")
+
     return BacktestContext(
         npz_path=out_path,
         tick_size=tick_size,
@@ -167,6 +171,8 @@ def _prepare_context(args: argparse.Namespace) -> BacktestContext | None:
         window_seconds=window_seconds,
         vol_scale=vol_scale,
         estimated=estimated,
+        maker_fee=maker_fee,
+        taker_fee=taker_fee,
     )
 
 

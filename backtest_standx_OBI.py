@@ -12,6 +12,7 @@ from backtest_utils import (
     save_plots,
     extract_backtest_results,
     print_backtest_summary,
+    load_fees_from_config,
 )
 from backtest_common import (
     njit,
@@ -369,8 +370,7 @@ def run_backtest(
         record_every = 1
     estimated = max(10_000, int(max_steps / record_every) + 10_000)
 
-    maker_fee = 0.00002
-    taker_fee = 0.0002
+    maker_fee, taker_fee = load_fees_from_config(Path("config.json"))
     print(
         "backtest_config:",
         f"step_ns={step_ns}",

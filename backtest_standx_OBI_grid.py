@@ -15,6 +15,7 @@ from backtest_utils import (
     fmt_float,
     progress_str,
     load_threads_from_config,
+    load_fees_from_config,
 )
 from backtest_common import infer_roi_bounds, BacktestAPI
 
@@ -38,8 +39,8 @@ class BacktestContext:
     roi_ub: float
     max_steps: int
     estimated: int
-    maker_fee: float = 0.00002
-    taker_fee: float = 0.0002
+    maker_fee: float
+    taker_fee: float
 
 
 def _load_backtest_api() -> BacktestAPI:
@@ -217,6 +218,9 @@ def _prepare_context(args: argparse.Namespace) -> BacktestContext | None:
     max_steps = max(10_000, int(duration / step_ns) + 10_000)
     estimated = max(10_000, int(max_steps / record_every) + 10_000)
 
+    maker_fee, taker_fee = load_fees_from_config(Path("config.json"))
+    print(f"maker_fee={maker_fee:.4%} taker_fee={taker_fee:.4%}")
+
     return BacktestContext(
         npz_path=out_path,
         tick_size=tick_size,
@@ -235,6 +239,8 @@ def _prepare_context(args: argparse.Namespace) -> BacktestContext | None:
         roi_ub=roi_ub,
         max_steps=max_steps,
         estimated=estimated,
+        maker_fee=maker_fee,
+        taker_fee=taker_fee,
     )
 
 

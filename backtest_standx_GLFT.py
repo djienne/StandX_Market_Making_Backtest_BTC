@@ -12,6 +12,7 @@ from backtest_utils import (
     format_ns,
     print_meta_summary,
     save_plots,
+    load_fees_from_config,
 )
 from backtest_common import (
     njit,
@@ -299,8 +300,7 @@ def run_backtest(
         record_every = 1
     estimated = max(10_000, int(max_steps / record_every) + 10_000)
 
-    maker_fee = 0.00002
-    taker_fee = 0.0002
+    maker_fee, taker_fee = load_fees_from_config(Path("config.json"))
     if not np.isfinite(order_qty_dollar) or order_qty_dollar <= 0:
         raise ValueError("order_qty_dollar must be > 0")
     if not np.isfinite(max_position_dollar) or max_position_dollar <= 0:
