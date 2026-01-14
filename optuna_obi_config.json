@@ -5,7 +5,7 @@
     "c1_ticks": {"min": 10, "max": 1000, "log": false}
   },
   "optimization": {
-    "n_trials": 200,
+    "n_trials": 10,
     "study_name": "obi_mm_opt",
     "storage": "sqlite:///optuna_obi.db",
     "min_trades": 10,
