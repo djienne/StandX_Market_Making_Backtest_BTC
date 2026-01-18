@@ -19,7 +19,7 @@
     "step_ns": 100000000,
     "window_steps": 6000,
     "update_interval_steps": 50,
-    "order_qty_dollar": 20.0,
+    "order_qty_dollar": 100.0,
     "max_position_dollar": 400.0,
     "grid_num": 5,
     "adj1": 1.0,
