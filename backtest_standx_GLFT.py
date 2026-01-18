@@ -13,6 +13,8 @@ from backtest_utils import (
     print_meta_summary,
     save_plots,
     load_fees_from_config,
+    build_gap_context,
+    load_symbol_from_config,
 )
 from backtest_common import (
     njit,
@@ -24,6 +26,12 @@ from backtest_common import (
     GTX,
     LIMIT,
     BUY_EVENT,
+    BacktestAPI,
+    build_asset,
+    compute_backtest_params,
+    add_common_args,
+    add_backtest_args,
+    add_run_backtest_args,
 )
 
 out_dtype = np.dtype(
@@ -35,6 +43,16 @@ out_dtype = np.dtype(
         ("k", "f8"),
     ]
 )
+
+
+@njit
+def _cancel_all_orders(hbt, asset_no):
+    orders = hbt.orders(asset_no)
+    order_values = orders.values()
+    while order_values.has_next():
+        order = order_values.get()
+        if order.cancellable:
+            hbt.cancel(asset_no, order.order_id, False)
 
 
 @njit
@@ -94,6 +112,9 @@ def gridtrading_glft_mm(
     window_steps,
     window_seconds,
     vol_scale,
+    base_ts_ns,
+    gap_starts_ns,
+    gap_ends_ns,
 ):
     asset_no = 0
     tick_size = hbt.depth(asset_no).tick_size
@@ -116,8 +137,29 @@ def gridtrading_glft_mm(
     volatility = np.nan
 
     record_counter = 0
+    gap_idx = 0
+    gap_count = len(gap_starts_ns)
+    in_gap = False
 
     while hbt.elapse(step_ns) == 0:
+        curr_ts_ns = base_ts_ns + (t + 1) * step_ns
+        while gap_idx < gap_count and curr_ts_ns >= gap_ends_ns[gap_idx]:
+            gap_idx += 1
+        gap_active = gap_idx < gap_count and curr_ts_ns >= gap_starts_ns[gap_idx]
+        if gap_active:
+            hbt.clear_last_trades(asset_no)
+            hbt.clear_inactive_orders(asset_no)
+            if not in_gap:
+                _cancel_all_orders(hbt, asset_no)
+            if record_every > 0 and record_counter % record_every == 0:
+                recorder.record(hbt)
+            record_counter += 1
+            in_gap = True
+            t += 1
+            if t >= max_steps:
+                break
+            continue
+        in_gap = False
         if not np.isnan(mid_price_tick):
             depth = -np.inf
             for last_trade in hbt.last_trades(asset_no):
@@ -272,6 +314,7 @@ def run_backtest(
     adj1: float,
     adj2: float,
     plots_dir: Path | None,
+    gap_threshold_minutes: float = 10.0,
 ) -> None:
     try:
         from hftbacktest import BacktestAsset, HashMapMarketDepthBacktest, BUY as HBUY, SELL as HSELL, GTX as HGTX, LIMIT as HLIMIT
@@ -289,16 +332,21 @@ def run_backtest(
         print("no events in npz; skipping backtest")
         return
 
-    duration = int(data["local_ts"].max() - data["local_ts"].min())
-    base_ts_ns = int(data["local_ts"].min())
-    max_steps = max(10_000, int(duration / step_ns) + 10_000)
-
-    window_seconds = window_steps * step_ns / 1_000_000_000
-    vol_scale = np.sqrt(1_000_000_000 / step_ns)
-
     if record_every <= 0:
         record_every = 1
-    estimated = max(10_000, int(max_steps / record_every) + 10_000)
+
+    params = compute_backtest_params(data, step_ns, record_every)
+    max_steps = int(params["max_steps"])
+    estimated = int(params["estimated"])
+    base_ts_ns = int(params["base_ts_ns"])
+    vol_scale = float(params["vol_scale"])
+    window_seconds = window_steps * step_ns / 1_000_000_000
+
+    base_ts_ns, gap_starts_ns, gap_ends_ns, gap_log = build_gap_context(
+        data, gap_threshold_minutes, base_ts_ns
+    )
+    if gap_log:
+        print(gap_log)
 
     maker_fee, taker_fee = load_fees_from_config(Path("config.json"))
     if not np.isfinite(order_qty_dollar) or order_qty_dollar <= 0:
@@ -318,25 +366,24 @@ def run_backtest(
         f"delta={delta}",
         f"adj1={adj1}",
         f"adj2={adj2}",
+        f"gap_threshold_minutes={gap_threshold_minutes}",
         f"maker_fee={maker_fee}",
         f"taker_fee={taker_fee}",
     )
 
-    asset = (
-        BacktestAsset()
-        .data([str(npz_path)])
-        .linear_asset(1.0)
-        .constant_order_latency(latency_ns, latency_ns)
-        .risk_adverse_queue_model()
-        .no_partial_fill_exchange()
-        .trading_value_fee_model(maker_fee, taker_fee)
-        .tick_size(tick_size)
-        .lot_size(lot_size)
-        .last_trades_capacity(10000)
+    api = BacktestAPI(BacktestAsset, HashMapMarketDepthBacktest, Recorder)
+    asset = build_asset(
+        api,
+        npz_path,
+        tick_size,
+        lot_size,
+        latency_ns,
+        maker_fee,
+        taker_fee,
     )
 
-    hbt = HashMapMarketDepthBacktest([asset])
-    recorder = Recorder(1, estimated)
+    hbt = api.backtest_cls([asset])
+    recorder = api.recorder_cls(1, estimated)
 
     algo_out = gridtrading_glft_mm(
         hbt,
@@ -355,6 +402,9 @@ def run_backtest(
         window_steps,
         window_seconds,
         vol_scale,
+        base_ts_ns,
+        gap_starts_ns,
+        gap_ends_ns,
     )
 
     hbt.close()
@@ -526,12 +576,10 @@ def _save_calibration_csv(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run GLFT grid strategy on parquet data.")
-    parser.add_argument("--data-dir", default="data")
+    default_symbol = load_symbol_from_config(Path("config.json"))
+    add_common_args(parser, default_symbol)
     parser.add_argument("--out", default="data/btc_hft_glft.npz")
-    parser.add_argument("--max-rows", type=int, default=None)
-    parser.add_argument("--latency-ns", type=int, default=1_000_000)
-    parser.add_argument("--record-every", type=int, default=10)
-    parser.add_argument("--step-ns", type=int, default=100_000_000)
+    add_backtest_args(parser, record_every_default=10, step_ns_default=100_000_000)
     parser.add_argument("--window-steps", type=int, default=6_000)
     parser.add_argument("--update-interval-steps", type=int, default=50)
     parser.add_argument(
@@ -555,20 +603,7 @@ def main() -> None:
     parser.add_argument("--delta", type=float, default=10.0)
     parser.add_argument("--adj1", type=float, default=1.0)
     parser.add_argument("--adj2", type=float, default=0.06)
-    parser.add_argument("--plots-dir", default="plots")
-    parser.add_argument(
-        "--run-backtest",
-        action="store_true",
-        default=True,
-        help="Run the backtest after conversion (default: True).",
-    )
-    parser.add_argument(
-        "--no-run-backtest",
-        dest="run_backtest",
-        action="store_false",
-        help="Skip running the backtest after conversion.",
-    )
-    parser.add_argument("--symbol", type=str, default=None, help="Symbol to filter (e.g. CRV). Auto-detected if not specified.")
+    add_run_backtest_args(parser)
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
@@ -606,6 +641,7 @@ def main() -> None:
             args.adj1,
             args.adj2,
             plots_dir,
+            args.gap_threshold_minutes,
         )
 
 

@@ -13,6 +13,8 @@ from backtest_utils import (
     extract_backtest_results,
     print_backtest_summary,
     load_fees_from_config,
+    build_gap_context,
+    load_symbol_from_config,
 )
 from backtest_common import (
     njit,
@@ -25,6 +27,12 @@ from backtest_common import (
     LIMIT,
     init_hft_constants,
     infer_roi_bounds,
+    BacktestAPI,
+    build_asset,
+    compute_backtest_params,
+    add_common_args,
+    add_backtest_args,
+    add_run_backtest_args,
 )
 
 
@@ -49,6 +57,9 @@ def obi_mm(
     grid_num,
     roi_lb,
     roi_ub,
+    base_ts_ns,
+    gap_starts_ns,
+    gap_ends_ns,
 ):
     asset_no = 0
     imbalance_timeseries = np.full(max_steps, np.nan, np.float64)
@@ -66,12 +77,39 @@ def obi_mm(
     vol_scale = np.sqrt(1_000_000_000 / step_ns)
     roi_lb_tick = int(round(roi_lb / tick_size))
     roi_ub_tick = int(round(roi_ub / tick_size))
+    gap_idx = 0
+    gap_count = len(gap_starts_ns)
+    in_gap = False
     if roi_lb_tick > roi_ub_tick:
         tmp = roi_lb_tick
         roi_lb_tick = roi_ub_tick
         roi_ub_tick = tmp
 
     while hbt.elapse(step_ns) == 0:
+        curr_ts_ns = base_ts_ns + (t + 1) * step_ns
+        while gap_idx < gap_count and curr_ts_ns >= gap_ends_ns[gap_idx]:
+            gap_idx += 1
+        gap_active = gap_idx < gap_count and curr_ts_ns >= gap_starts_ns[gap_idx]
+        if gap_active:
+            hbt.clear_last_trades(asset_no)
+            hbt.clear_inactive_orders(asset_no)
+            orders = hbt.orders(asset_no)
+            if not in_gap:
+                order_values = orders.values()
+                while order_values.has_next():
+                    order = order_values.get()
+                    if order.cancellable:
+                        hbt.cancel(asset_no, order.order_id, False)
+            if record_every > 0 and record_counter % record_every == 0:
+                recorder.record(hbt)
+            record_counter += 1
+            in_gap = True
+            t += 1
+            if t >= max_steps:
+                break
+            continue
+        in_gap = False
+
         hbt.clear_inactive_orders(asset_no)
 
         depth = hbt.depth(asset_no)
@@ -276,6 +314,7 @@ def run_backtest(
     roi_ub: float | None,
     roi_pad: float,
     plots_dir: Path | None,
+    gap_threshold_minutes: float = 10.0,
 ) -> None:
     try:
         from hftbacktest import (
@@ -363,12 +402,18 @@ def run_backtest(
     update_interval_steps = max(1, int(update_interval_steps))
     window_seconds = window_steps * step_ns / 1_000_000_000
 
-    duration = int(data["local_ts"].max() - data["local_ts"].min())
-    max_steps = max(10_000, int(duration / step_ns) + 10_000)
-
     if record_every <= 0:
         record_every = 1
-    estimated = max(10_000, int(max_steps / record_every) + 10_000)
+    params = compute_backtest_params(data, step_ns, record_every)
+    max_steps = int(params["max_steps"])
+    estimated = int(params["estimated"])
+    base_ts_ns = int(params["base_ts_ns"])
+
+    base_ts_ns, gap_starts_ns, gap_ends_ns, gap_log = build_gap_context(
+        data, gap_threshold_minutes, base_ts_ns
+    )
+    if gap_log:
+        print(gap_log)
 
     maker_fee, taker_fee = load_fees_from_config(Path("config.json"))
     print(
@@ -394,27 +439,26 @@ def run_backtest(
         "grid_interval=dynamic",
         f"roi_lb={roi_lb}",
         f"roi_ub={roi_ub}",
+        f"gap_threshold_minutes={gap_threshold_minutes}",
         f"maker_fee={maker_fee}",
         f"taker_fee={taker_fee}",
     )
 
-    asset = (
-        BacktestAsset()
-        .data([str(npz_path)])
-        .linear_asset(1.0)
-        .constant_order_latency(latency_ns, latency_ns)
-        .risk_adverse_queue_model()
-        .no_partial_fill_exchange()
-        .trading_value_fee_model(maker_fee, taker_fee)
-        .tick_size(tick_size)
-        .lot_size(lot_size)
-        .roi_lb(roi_lb)
-        .roi_ub(roi_ub)
-        .last_trades_capacity(10000)
+    api = BacktestAPI(BacktestAsset, ROIVectorMarketDepthBacktest, Recorder)
+    asset = build_asset(
+        api,
+        npz_path,
+        tick_size,
+        lot_size,
+        latency_ns,
+        maker_fee,
+        taker_fee,
+        roi_lb=roi_lb,
+        roi_ub=roi_ub,
     )
 
-    hbt = ROIVectorMarketDepthBacktest([asset])
-    recorder = Recorder(1, estimated)
+    hbt = api.backtest_cls([asset])
+    recorder = api.recorder_cls(1, estimated)
 
     obi_mm(
         hbt,
@@ -436,6 +480,9 @@ def run_backtest(
         grid_num,
         roi_lb,
         roi_ub,
+        base_ts_ns,
+        gap_starts_ns,
+        gap_ends_ns,
     )
 
     hbt.close()
@@ -473,12 +520,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run an order book imbalance market-making backtest on parquet data."
     )
-    parser.add_argument("--data-dir", default="data")
+    default_symbol = load_symbol_from_config(Path("config.json"))
+    add_common_args(parser, default_symbol)
     parser.add_argument("--out", default="data/btc_hft_obi.npz")
-    parser.add_argument("--max-rows", type=int, default=None)
-    parser.add_argument("--latency-ns", type=int, default=1_000_000)
-    parser.add_argument("--record-every", type=int, default=10)
-    parser.add_argument("--step-ns", type=int, default=100_000_000)
+    add_backtest_args(parser, record_every_default=10, step_ns_default=100_000_000)
     parser.add_argument("--window-steps", type=int, default=6000)
     parser.add_argument("--update-interval-steps", type=int, default=50)
     parser.add_argument("--order-qty-dollar", type=float, default=20.0)
@@ -499,20 +544,7 @@ def main() -> None:
     parser.add_argument("--roi-lb", type=float, default=None)
     parser.add_argument("--roi-ub", type=float, default=None)
     parser.add_argument("--roi-pad", type=float, default=0.02)
-    parser.add_argument("--plots-dir", default="plots")
-    parser.add_argument(
-        "--run-backtest",
-        action="store_true",
-        default=True,
-        help="Run the backtest after conversion (default: True).",
-    )
-    parser.add_argument(
-        "--no-run-backtest",
-        dest="run_backtest",
-        action="store_false",
-        help="Skip running the backtest after conversion.",
-    )
-    parser.add_argument("--symbol", type=str, default=None, help="Symbol to filter (e.g. CRV). Auto-detected if not specified.")
+    add_run_backtest_args(parser)
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
@@ -563,6 +595,7 @@ def main() -> None:
             args.roi_ub,
             args.roi_pad,
             plots_dir,
+            args.gap_threshold_minutes,
         )
 
 

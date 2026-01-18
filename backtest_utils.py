@@ -32,6 +32,46 @@ def format_ns(ts_ns: Optional[int]) -> str:
     return dt.isoformat().replace("+00:00", "Z")
 
 
+def detect_time_gaps(data: np.ndarray, gap_threshold_ns: int) -> tuple[np.ndarray, np.ndarray]:
+    """Detect gaps larger than threshold in local timestamps."""
+    if gap_threshold_ns <= 0:
+        return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.int64)
+    ts = data["local_ts"].astype(np.int64)
+    if ts.size < 2:
+        return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.int64)
+    if np.any(ts[1:] < ts[:-1]):
+        ts = np.sort(ts)
+    diffs = np.diff(ts)
+    idx = np.where(diffs > gap_threshold_ns)[0]
+    if idx.size == 0:
+        return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.int64)
+    gap_starts = ts[idx] + 1
+    gap_ends = ts[idx + 1]
+    return gap_starts.astype(np.int64), gap_ends.astype(np.int64)
+
+
+def build_gap_context(
+    data: np.ndarray,
+    gap_threshold_minutes: float,
+    base_ts_ns: int | None = None,
+) -> tuple[int, np.ndarray, np.ndarray, str | None]:
+    """Build gap detection context and optional log line."""
+    if base_ts_ns is None:
+        base_ts_ns = int(data["local_ts"].min()) if len(data) > 0 else 0
+    gap_threshold_ns = int(max(0.0, gap_threshold_minutes) * 60 * 1_000_000_000)
+    gap_starts_ns, gap_ends_ns = detect_time_gaps(data, gap_threshold_ns)
+    log_line = None
+    if gap_starts_ns.size > 0:
+        max_gap_ns = int(np.max(gap_ends_ns - gap_starts_ns))
+        log_line = (
+            "gap_filter: "
+            f"threshold_min={gap_threshold_minutes} "
+            f"gaps={len(gap_starts_ns)} "
+            f"max_gap_s={max_gap_ns / 1_000_000_000:.1f}"
+        )
+    return base_ts_ns, gap_starts_ns, gap_ends_ns, log_line
+
+
 def print_meta_summary(meta: dict, out_path: Path) -> None:
     """Print summary of conversion metadata."""
     price_files = meta.get("price_files")
@@ -187,6 +227,23 @@ def load_threads_from_config(config_path: Path, default_threads: int = 4) -> int
     return default_threads
 
 
+def load_symbol_from_config(
+    config_path: Path,
+    default_symbol: str | None = "BTC-USD",
+) -> str | None:
+    """Load symbol from config file, with fallback to default."""
+    if not config_path.exists():
+        return default_symbol
+    try:
+        cfg = json.loads(config_path.read_text(encoding="utf-8"))
+        symbol = cfg.get("symbol")
+        if symbol:
+            return str(symbol)
+    except Exception:
+        pass
+    return default_symbol
+
+
 def compute_study_fingerprint(config: dict, npz_meta_path: Path) -> str:
     """Compute a fingerprint of study config + data for cache invalidation.
 
@@ -217,7 +274,7 @@ def compute_study_fingerprint(config: dict, npz_meta_path: Path) -> str:
     # Include key backtest parameters that affect results
     bt_config = config.get("backtest", {})
     for key in ["latency_ns", "step_ns", "order_qty_dollar", "max_position_dollar",
-                "grid_num", "window_steps", "update_interval_steps"]:
+                "grid_num", "window_steps", "update_interval_steps", "gap_threshold_minutes"]:
         hasher.update(f"{key}:{bt_config.get(key)}".encode())
 
     # Include optimization parameters

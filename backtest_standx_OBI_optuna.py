@@ -25,8 +25,10 @@ from backtest_utils import (
     save_plots,
     format_ns,
     compute_study_fingerprint,
+    build_gap_context,
+    load_symbol_from_config,
 )
-from backtest_common import infer_roi_bounds, BacktestAPI
+from backtest_common import infer_roi_bounds, BacktestAPI, build_asset, compute_backtest_params
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,9 @@ class BacktestContext:
     grid_num: int
     maker_fee: float
     taker_fee: float
+    base_ts_ns: int
+    gap_starts_ns: np.ndarray
+    gap_ends_ns: np.ndarray
 
 
 def _load_backtest_api() -> BacktestAPI:
@@ -123,19 +128,16 @@ def _run_single_backtest(
     skew: float,
     c1: float,
 ) -> BacktestResult:
-    asset = (
-        api.asset_cls()
-        .data([str(ctx.npz_path)])
-        .linear_asset(1.0)
-        .constant_order_latency(ctx.latency_ns, ctx.latency_ns)
-        .risk_adverse_queue_model()
-        .no_partial_fill_exchange()
-        .trading_value_fee_model(ctx.maker_fee, ctx.taker_fee)
-        .tick_size(ctx.tick_size)
-        .lot_size(ctx.lot_size)
-        .roi_lb(ctx.roi_lb)
-        .roi_ub(ctx.roi_ub)
-        .last_trades_capacity(10000)
+    asset = build_asset(
+        api,
+        ctx.npz_path,
+        ctx.tick_size,
+        ctx.lot_size,
+        ctx.latency_ns,
+        ctx.maker_fee,
+        ctx.taker_fee,
+        roi_lb=ctx.roi_lb,
+        roi_ub=ctx.roi_ub,
     )
 
     hbt = api.backtest_cls([asset])
@@ -161,6 +163,9 @@ def _run_single_backtest(
             ctx.grid_num,
             ctx.roi_lb,
             ctx.roi_ub,
+            ctx.base_ts_ns,
+            ctx.gap_starts_ns,
+            ctx.gap_ends_ns,
         )
     finally:
         hbt.close()
@@ -191,19 +196,16 @@ def _run_backtest_with_records(
     c1: float,
 ) -> np.ndarray | None:
     """Run backtest and return records for plotting."""
-    asset = (
-        api.asset_cls()
-        .data([str(ctx.npz_path)])
-        .linear_asset(1.0)
-        .constant_order_latency(ctx.latency_ns, ctx.latency_ns)
-        .risk_adverse_queue_model()
-        .no_partial_fill_exchange()
-        .trading_value_fee_model(ctx.maker_fee, ctx.taker_fee)
-        .tick_size(ctx.tick_size)
-        .lot_size(ctx.lot_size)
-        .roi_lb(ctx.roi_lb)
-        .roi_ub(ctx.roi_ub)
-        .last_trades_capacity(10000)
+    asset = build_asset(
+        api,
+        ctx.npz_path,
+        ctx.tick_size,
+        ctx.lot_size,
+        ctx.latency_ns,
+        ctx.maker_fee,
+        ctx.taker_fee,
+        roi_lb=ctx.roi_lb,
+        roi_ub=ctx.roi_ub,
     )
 
     hbt = api.backtest_cls([asset])
@@ -229,6 +231,9 @@ def _run_backtest_with_records(
             ctx.grid_num,
             ctx.roi_lb,
             ctx.roi_ub,
+            ctx.base_ts_ns,
+            ctx.gap_starts_ns,
+            ctx.gap_ends_ns,
         )
     finally:
         hbt.close()
@@ -257,7 +262,7 @@ def _prepare_context(config: dict[str, Any]) -> BacktestContext | None:
     out_path = Path(bt_config["out"])
     max_rows = bt_config.get("max_rows")
     latency_ns = bt_config.get("latency_ns", 1_000_000)
-    symbol = bt_config.get("symbol")
+    symbol = bt_config.get("symbol") or load_symbol_from_config(Path("config.json"))
 
     print(f"data_dir={data_dir} out={out_path}")
     tick_size, lot_size, count, converted = convert_parquet_to_npz(
@@ -286,13 +291,22 @@ def _prepare_context(config: dict[str, Any]) -> BacktestContext | None:
     window_steps = max(1, int(bt_config.get("window_steps", 6000)))
     update_interval_steps = max(1, int(bt_config.get("update_interval_steps", 50)))
     record_every = max(1, int(bt_config.get("record_every", 10)))
+    gap_threshold_minutes = float(bt_config.get("gap_threshold_minutes", 10.0))
 
     start_ts = int(data["local_ts"].min())
     end_ts = int(data["local_ts"].max())
-    duration = end_ts - start_ts
     print(f"backtest_period={format_ns(start_ts)} to {format_ns(end_ts)}")
-    max_steps = max(10_000, int(duration / step_ns) + 10_000)
-    estimated = max(10_000, int(max_steps / record_every) + 10_000)
+
+    params = compute_backtest_params(data, step_ns, record_every)
+    max_steps = int(params["max_steps"])
+    estimated = int(params["estimated"])
+    base_ts_ns = int(params["base_ts_ns"])
+
+    base_ts_ns, gap_starts_ns, gap_ends_ns, gap_log = build_gap_context(
+        data, gap_threshold_minutes, base_ts_ns
+    )
+    if gap_log:
+        print(gap_log)
 
     # Load fees from config.json
     maker_fee, taker_fee = load_fees_from_config(Path("config.json"))
@@ -318,6 +332,9 @@ def _prepare_context(config: dict[str, Any]) -> BacktestContext | None:
         grid_num=bt_config.get("grid_num", 1),
         maker_fee=maker_fee,
         taker_fee=taker_fee,
+        base_ts_ns=base_ts_ns,
+        gap_starts_ns=gap_starts_ns,
+        gap_ends_ns=gap_ends_ns,
     )
 
 

@@ -130,24 +130,41 @@ def build_asset(
     return asset
 
 
-def add_common_args(parser: argparse.ArgumentParser) -> None:
-    """Add common arguments shared by all backtest scripts."""
+def add_common_args(
+    parser: argparse.ArgumentParser,
+    default_symbol: Optional[str] = None,
+) -> None:
+    """Add common arguments with optional default symbol."""
     parser.add_argument("--data-dir", default="data")
     parser.add_argument("--max-rows", type=int, default=None)
     parser.add_argument("--latency-ns", type=int, default=1_000_000)
     parser.add_argument(
         "--symbol",
         type=str,
-        default=None,
-        help="Symbol to filter (e.g. CRV). Auto-detected if not specified.",
+        default=default_symbol,
+        help="Symbol to filter (e.g. CRV). Defaults to config.json symbol if set.",
     )
 
 
-def add_backtest_args(parser: argparse.ArgumentParser, record_every_default: int = 10) -> None:
+def add_backtest_args(
+    parser: argparse.ArgumentParser,
+    record_every_default: int = 10,
+    step_ns_default: int = 100_000_000,
+    plots_dir_default: str = "plots",
+    gap_threshold_minutes_default: float = 10.0,
+    include_plots_dir: bool = True,
+) -> None:
     """Add arguments for running backtests."""
     parser.add_argument("--record-every", type=int, default=record_every_default)
-    parser.add_argument("--step-ns", type=int, default=100_000_000)
-    parser.add_argument("--plots-dir", default="plots")
+    parser.add_argument("--step-ns", type=int, default=step_ns_default)
+    parser.add_argument(
+        "--gap-threshold-minutes",
+        type=float,
+        default=gap_threshold_minutes_default,
+        help="Cancel orders and pause trading during data gaps longer than this.",
+    )
+    if include_plots_dir:
+        parser.add_argument("--plots-dir", default=plots_dir_default)
 
 
 def add_run_backtest_args(parser: argparse.ArgumentParser) -> None:
@@ -176,9 +193,9 @@ def compute_backtest_params(
     Returns dict with:
     - duration: Duration in nanoseconds
     - max_steps: Maximum simulation steps
-    - estimated_records: Estimated number of records
+    - estimated: Estimated number of records
+    - estimated_records: Estimated number of records (legacy key)
     - base_ts_ns: Base timestamp
-    - window_seconds: Window in seconds (for window_steps)
     - vol_scale: Volatility scaling factor
     """
     duration = int(data["local_ts"].max() - data["local_ts"].min())
@@ -194,6 +211,7 @@ def compute_backtest_params(
     return {
         "duration": duration,
         "max_steps": max_steps,
+        "estimated": estimated,
         "estimated_records": estimated,
         "base_ts_ns": base_ts_ns,
         "vol_scale": vol_scale,

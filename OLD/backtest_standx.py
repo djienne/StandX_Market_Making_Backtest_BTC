@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 
 from convert_standx import convert_parquet_to_npz
-from backtest_utils import extract_backtest_results, print_backtest_summary
-from backtest_common import njit
+from backtest_utils import extract_backtest_results, print_backtest_summary, load_symbol_from_config
+from backtest_common import njit, BacktestAPI, build_asset
 
 
 
@@ -113,16 +113,15 @@ def run_backtest(
 
         return True
 
-    asset = (
-        BacktestAsset()
-        .data([str(npz_path)])
-        .linear_asset(1.0)
-        .constant_order_latency(latency_ns, latency_ns)
-        .risk_adverse_queue_model()
-        .no_partial_fill_exchange()
-        .trading_value_fee_model(0.0, 0.0)
-        .tick_size(tick_size)
-        .lot_size(lot_size)
+    api = BacktestAPI(BacktestAsset, HashMapMarketDepthBacktest, Recorder)
+    asset = build_asset(
+        api,
+        npz_path,
+        tick_size,
+        lot_size,
+        latency_ns,
+        maker_fee=0.0,
+        taker_fee=0.0,
     )
     if record_every <= 0:
         record_every = 1
@@ -133,8 +132,8 @@ def run_backtest(
     duration = int(data["local_ts"].max() - data["local_ts"].min())
     estimated = max(10_000, int(duration / (10_000_000 * record_every)) + 10_000)
 
-    hbt = HashMapMarketDepthBacktest([asset])
-    recorder = Recorder(1, estimated)
+    hbt = api.backtest_cls([asset])
+    recorder = api.recorder_cls(1, estimated)
     market_making_algo(hbt, recorder.recorder, record_every)
     hbt.close()
 
@@ -149,6 +148,7 @@ def run_backtest(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a simple hftbacktest on parquet data.")
+    default_symbol = load_symbol_from_config(Path("config.json"))
     parser.add_argument("--data-dir", default="data")
     parser.add_argument("--out", default="data/btc_hft.npz")
     parser.add_argument("--max-rows", type=int, default=None)
@@ -160,7 +160,12 @@ def main() -> None:
         default=False,
         help="Skip running the backtest after conversion.",
     )
-    parser.add_argument("--symbol", type=str, default=None, help="Symbol to filter (e.g. CRV). Auto-detected if not specified.")
+    parser.add_argument(
+        "--symbol",
+        type=str,
+        default=default_symbol,
+        help="Symbol to filter (e.g. CRV). Defaults to config.json symbol if set.",
+    )
     args = parser.parse_args()
     args.run_backtest = not args.skip_backtest
 

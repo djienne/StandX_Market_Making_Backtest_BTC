@@ -16,8 +16,16 @@ from backtest_utils import (
     progress_str,
     load_threads_from_config,
     load_fees_from_config,
+    build_gap_context,
+    load_symbol_from_config,
 )
-from backtest_common import BacktestAPI
+from backtest_common import (
+    BacktestAPI,
+    build_asset,
+    compute_backtest_params,
+    add_common_args,
+    add_backtest_args,
+)
 
 
 @dataclass(frozen=True)
@@ -40,6 +48,9 @@ class BacktestContext:
     estimated: int
     maker_fee: float
     taker_fee: float
+    base_ts_ns: int
+    gap_starts_ns: np.ndarray
+    gap_ends_ns: np.ndarray
 
 
 def _load_backtest_api() -> BacktestAPI:
@@ -71,16 +82,15 @@ def _run_single_backtest(
     gamma: float,
 ) -> tuple[float | None, float | None, int | None]:
     asset = (
-        api.asset_cls()
-        .data([str(ctx.npz_path)])
-        .linear_asset(1.0)
-        .constant_order_latency(ctx.latency_ns, ctx.latency_ns)
-        .risk_adverse_queue_model()
-        .no_partial_fill_exchange()
-        .trading_value_fee_model(ctx.maker_fee, ctx.taker_fee)
-        .tick_size(ctx.tick_size)
-        .lot_size(ctx.lot_size)
-        .last_trades_capacity(10000)
+        build_asset(
+            api,
+            ctx.npz_path,
+            ctx.tick_size,
+            ctx.lot_size,
+            ctx.latency_ns,
+            ctx.maker_fee,
+            ctx.taker_fee,
+        )
     )
 
     hbt = api.backtest_cls([asset])
@@ -103,6 +113,9 @@ def _run_single_backtest(
             ctx.window_steps,
             ctx.window_seconds,
             ctx.vol_scale,
+            ctx.base_ts_ns,
+            ctx.gap_starts_ns,
+            ctx.gap_ends_ns,
         )
     finally:
         hbt.close()
@@ -144,12 +157,19 @@ def _prepare_context(args: argparse.Namespace) -> BacktestContext | None:
         print("no events in npz; skipping backtest")
         return None
 
-    duration = int(data["local_ts"].max() - data["local_ts"].min())
-    max_steps = max(10_000, int(duration / args.step_ns) + 10_000)
     record_every = max(1, int(args.record_every))
-    estimated = max(10_000, int(max_steps / record_every) + 10_000)
+    params = compute_backtest_params(data, args.step_ns, record_every)
+    max_steps = int(params["max_steps"])
+    estimated = int(params["estimated"])
+    base_ts_ns = int(params["base_ts_ns"])
+    vol_scale = float(params["vol_scale"])
     window_seconds = args.window_steps * args.step_ns / 1_000_000_000
-    vol_scale = np.sqrt(1_000_000_000 / args.step_ns)
+
+    base_ts_ns, gap_starts_ns, gap_ends_ns, gap_log = build_gap_context(
+        data, args.gap_threshold_minutes, base_ts_ns
+    )
+    if gap_log:
+        print(gap_log)
 
     maker_fee, taker_fee = load_fees_from_config(Path("config.json"))
     print(f"maker_fee={maker_fee:.4%} taker_fee={taker_fee:.4%}")
@@ -173,6 +193,9 @@ def _prepare_context(args: argparse.Namespace) -> BacktestContext | None:
         estimated=estimated,
         maker_fee=maker_fee,
         taker_fee=taker_fee,
+        base_ts_ns=base_ts_ns,
+        gap_starts_ns=gap_starts_ns,
+        gap_ends_ns=gap_ends_ns,
     )
 
 
@@ -205,12 +228,15 @@ def main() -> None:
             "final equity and trading volume."
         )
     )
-    parser.add_argument("--data-dir", default="data")
+    default_symbol = load_symbol_from_config(Path("config.json"))
+    add_common_args(parser, default_symbol)
     parser.add_argument("--out", default="data/btc_hft_glft.npz")
-    parser.add_argument("--max-rows", type=int, default=None)
-    parser.add_argument("--latency-ns", type=int, default=1_000_000)
-    parser.add_argument("--record-every", type=int, default=10)
-    parser.add_argument("--step-ns", type=int, default=100_000_000)
+    add_backtest_args(
+        parser,
+        record_every_default=10,
+        step_ns_default=100_000_000,
+        include_plots_dir=False,
+    )
     parser.add_argument("--window-steps", type=int, default=6_000)
     parser.add_argument("--update-interval-steps", type=int, default=50)
     parser.add_argument(
@@ -249,7 +275,6 @@ def main() -> None:
         action="store_true",
         help="Suppress per-run progress logging.",
     )
-    parser.add_argument("--symbol", type=str, default=None, help="Symbol to filter (e.g. CRV). Auto-detected if not specified.")
     args = parser.parse_args()
 
     if not np.isfinite(args.order_qty_dollar) or args.order_qty_dollar <= 0:
