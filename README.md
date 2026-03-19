@@ -4,8 +4,6 @@
 
 End-to-end market-making pipeline for StandX: **collect** live orderbook/trade data, **convert** to backtesting format, and **backtest** the OBI (Order Book Imbalance) strategy with parameter optimization.
 
-![Backtest Results](plots/obi_optuna_best_obi_mm_opt_position_equity.png)
-
 ## Pipeline Overview
 
 ```
@@ -35,6 +33,8 @@ data_collector/            convert_standx.py         backtest_standx_OBI*.py
 - `backtest_utils.py` — Utilities (plotting, gap detection, config loaders, Sharpe ratio)
 
 ### Other
+- `config.json` — Shared configuration (symbols, fees, output directory)
+- `optuna_obi_config.json` — OBI optimization search space and settings
 - `hftbacktest/` — Vendored hftbacktest source (Rust + Python bindings)
 - `docs/` — API docs (`api_*.md`), strategy papers (PDFs), and technical notes
 - `data/` — Parquet inputs and generated NPZ files
@@ -139,6 +139,7 @@ python test_data_collector.py --verbose
 ### 3. Run Backtest (from project root)
 
 ```bash
+cd ..
 # Converts parquet → NPZ automatically, then runs OBI backtest
 python backtest_standx_OBI.py --data-dir data --out data/btc_hft_obi.npz
 ```
