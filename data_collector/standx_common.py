@@ -454,7 +454,13 @@ class Config:
     """Configuration loader from JSON file."""
 
     def __init__(self, config_path: str = "config.json"):
-        config_file = Path(config_path).resolve()
+        config_file = Path(config_path)
+        if not config_file.exists():
+            # Search one level up (e.g., running from data_collector/ subfolder)
+            parent_config = Path(__file__).resolve().parent.parent / config_file.name
+            if parent_config.exists():
+                config_file = parent_config
+        config_file = config_file.resolve()
         with open(config_file, 'r') as f:
             data = json.load(f)
 

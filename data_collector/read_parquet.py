@@ -201,8 +201,8 @@ def main():
     )
     parser.add_argument(
         "--data-dir", "-d",
-        default="./data",
-        help="Data directory (default: ./data)"
+        default="../data",
+        help="Data directory (default: ../data)"
     )
     parser.add_argument(
         "--file", "-f",

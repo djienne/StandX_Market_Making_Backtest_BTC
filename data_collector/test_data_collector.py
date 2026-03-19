@@ -37,10 +37,17 @@ class TestResult:
         return self.failed == 0
 
 
-def load_config(config_path: str = "config.json") -> dict:
-    """Load configuration file."""
-    with open(config_path, 'r') as f:
-        return json.load(f)
+def load_config(config_path: str = "config.json"):
+    """Load configuration file. Returns (config_dict, config_file_path)."""
+    config_file = Path(config_path)
+    if not config_file.exists():
+        # Search one level up (e.g., running from data_collector/ subfolder)
+        parent_config = Path(__file__).resolve().parent.parent / config_file.name
+        if parent_config.exists():
+            config_file = parent_config
+    config_file = config_file.resolve()
+    with open(config_file, 'r') as f:
+        return json.load(f), config_file
 
 
 def find_parquet_files(data_dir: Path) -> Tuple[List[Path], List[Path]]:
@@ -460,12 +467,16 @@ def main():
 
     # Load config
     try:
-        config = load_config(args.config)
+        config, config_file = load_config(args.config)
     except FileNotFoundError:
         print(f"Error: Config file not found: {args.config}")
         sys.exit(1)
 
-    data_dir = Path(args.data_dir) if args.data_dir else Path(config.get("output_dir", "./data"))
+    if args.data_dir:
+        data_dir = Path(args.data_dir)
+    else:
+        # Resolve output_dir relative to the config file's directory
+        data_dir = (config_file.parent / config.get("output_dir", "./data")).resolve()
     expected_levels = config.get("orderbook_levels", 20)
 
     if not data_dir.exists():
