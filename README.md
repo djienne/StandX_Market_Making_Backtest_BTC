@@ -42,8 +42,9 @@ data_collector/            convert_standx.py         backtest_standx_OBI*.py
 
 ## Requirements
 
-- Python 3.10+ (3.12 recommended)
+- Python 3.12+ (hftbacktest requires >= 3.11)
 - Rust toolchain (for compiling hftbacktest)
+- **Windows only:** Visual Studio Build Tools with "Desktop development with C++" workload (install via `choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive" -y` in an admin shell)
 - Core deps: `numpy`, `pandas`, `pyarrow`, `websockets`
 - Optional: `numba` (speed), `matplotlib` (plots), `optuna` (Bayesian optimization)
 
@@ -81,7 +82,15 @@ python -c "from hftbacktest import BacktestAsset; print('hftbacktest OK')"
 
 1. Install Python 3.12 from [python.org](https://www.python.org/downloads/) (check "Add Python to PATH")
 2. Install Rust from [rustup.rs](https://rustup.rs/)
-3. Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) ("Desktop development with C++")
+3. Install Visual Studio Build Tools with C++ workload (admin shell):
+   ```
+   choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive" -y
+   ```
+
+> **Note:** On Windows with Git Bash, MSVC's `link.exe` must appear before Git's `/usr/bin/link.exe` in PATH. If `maturin develop` fails with linker errors, prepend MSVC to PATH:
+> ```bash
+> export PATH="/c/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/<version>/bin/Hostx64/x64:$PATH"
+> ```
 
 ```powershell
 python -m venv venv
@@ -137,6 +146,8 @@ python test_data_collector.py --verbose
 ```
 
 ### 3. Run Backtest (from project root)
+
+> **Note:** You need at least several hours of collected data for the backtest to produce meaningful results (trades). With only minutes of data, the strategy won't have enough price movement to execute.
 
 ```bash
 cd ..
