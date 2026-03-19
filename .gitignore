@@ -43,9 +43,8 @@ build/
 Thumbs.db
 nul
 
-# Plots (can be regenerated, except README showcase)
+# Plots (can be regenerated)
 plots/*.png
-!plots/obi_optuna_best_obi_mm_opt_position_equity.png
 plots/*.csv
 
 # Rust build artifacts in hftbacktest
