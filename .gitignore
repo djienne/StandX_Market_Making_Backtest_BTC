@@ -51,3 +51,4 @@ plots/*.csv
 # Rust build artifacts in hftbacktest
 hftbacktest/target/
 hftbacktest/py-hftbacktest/target/
+*.pdb
