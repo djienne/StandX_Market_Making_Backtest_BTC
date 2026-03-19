@@ -1,8 +1,6 @@
 services:
   data-collector:
-    build:
-      context: ..
-      dockerfile: data_collector/Dockerfile
+    build: .
     container_name: standx-data-collector
     restart: unless-stopped
     volumes:
@@ -15,9 +13,7 @@ services:
 
   # Optional: Run tests on collected data
   test-data:
-    build:
-      context: ..
-      dockerfile: data_collector/Dockerfile
+    build: .
     container_name: standx-test-data
     volumes:
       - ../data:/app/data:ro
@@ -30,9 +26,7 @@ services:
 
   # Optional: View collected data
   read-data:
-    build:
-      context: ..
-      dockerfile: data_collector/Dockerfile
+    build: .
     container_name: standx-read-data
     volumes:
       - ../data:/app/data:ro

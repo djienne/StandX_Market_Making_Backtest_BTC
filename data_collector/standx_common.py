@@ -454,13 +454,15 @@ class Config:
     """Configuration loader from JSON file."""
 
     def __init__(self, config_path: str = "config.json"):
-        with open(config_path, 'r') as f:
+        config_file = Path(config_path).resolve()
+        with open(config_file, 'r') as f:
             data = json.load(f)
 
         self.symbols: List[str] = data.get("symbols", ["BTC-USD"])
         self.orderbook_levels: int = data.get("orderbook_levels", 20)
         self.flush_interval_seconds: int = data.get("flush_interval_seconds", 5)
-        self.output_dir: Path = Path(data.get("output_dir", "./data"))
+        # Resolve output_dir relative to the config file's directory
+        self.output_dir: Path = (config_file.parent / data.get("output_dir", "./data")).resolve()
 
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)

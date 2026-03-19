@@ -16,13 +16,13 @@ data_collector.py          convert_standx.py         backtest_standx_OBI*.py
 ## Project Layout
 
 ### Data Collection (`data_collector/`)
+- `data_collector/data_collector.py` — Main collector: WebSocket → buffer → hourly Parquet files
+- `data_collector/standx_common.py` — WebSocket base class, reconnection logic, parquet I/O, config loading
+- `data_collector/test_data_collector.py` — Data validation test suite
+- `data_collector/read_parquet.py` — Parquet file viewer
 - `data_collector/docker-compose.yml` — Docker Compose for data collection (`docker compose up`)
 - `data_collector/Dockerfile` — Container build for data collector
 - `data_collector/requirements.txt` — Minimal Python dependencies for collection
-- `data_collector.py` — Main collector: WebSocket → buffer → hourly Parquet files
-- `standx_common.py` — WebSocket base class, reconnection logic, parquet I/O, config loading
-- `test_data_collector.py` — Data validation test suite
-- `read_parquet.py` — Parquet file viewer
 
 ### Data Conversion
 - `convert_standx.py` — Convert parquet snapshots/trades into hftbacktest event array (`.npz`)
@@ -122,14 +122,16 @@ docker compose up -d
 **Option B: Native Python**
 ```bash
 # Runs until Ctrl+C, saves hourly Parquet files to data/
+cd data_collector
 python data_collector.py
 ```
 
-Both methods write parquet files to the same `data/` directory.
+Both methods write parquet files to the same `data/` directory (project root).
 
 ### 2. View and Validate Collected Data
 
 ```bash
+cd data_collector
 python read_parquet.py --orderbook --rows 5
 python test_data_collector.py --verbose
 ```
