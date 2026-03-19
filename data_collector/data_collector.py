@@ -109,8 +109,9 @@ class DataCollector(BaseWebSocketClient):
 
         elif channel == CHANNEL_PUBLIC_TRADE:
             processed = self._process_trade(data.get("data", {}))
-            await self.buffer.add_trade(processed)
-            self.trade_count += 1
+            added = await self.buffer.add_trade(processed)
+            if added:
+                self.trade_count += 1
             return processed
 
         return None

@@ -53,6 +53,7 @@ class BacktestContext:
     base_ts_ns: int
     gap_starts_ns: np.ndarray
     gap_ends_ns: np.ndarray
+    min_half_spread_bps: float
 
 
 def _load_backtest_api() -> BacktestAPI:
@@ -125,6 +126,7 @@ def _run_single_backtest(
             ctx.base_ts_ns,
             ctx.gap_starts_ns,
             ctx.gap_ends_ns,
+            ctx.min_half_spread_bps,
         )
     finally:
         hbt.close()
@@ -264,6 +266,7 @@ def _prepare_context(args: argparse.Namespace) -> BacktestContext | None:
         base_ts_ns=base_ts_ns,
         gap_starts_ns=gap_starts_ns,
         gap_ends_ns=gap_ends_ns,
+        min_half_spread_bps=args.min_half_spread_bps,
     )
 
 
@@ -349,6 +352,7 @@ def main() -> None:
     parser.add_argument("--roi-lb", type=float, default=None)
     parser.add_argument("--roi-ub", type=float, default=None)
     parser.add_argument("--roi-pad", type=float, default=0.02)
+    parser.add_argument("--min-half-spread-bps", type=float, default=1.0)
     parser.add_argument(
         "--quiet",
         action="store_true",
