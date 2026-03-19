@@ -1,6 +1,6 @@
 # StandX Market Making
 
-> **Support this project:** Sign up on StandX using [this referral link](https://standx.com/referral?code=FREQTRADE)
+> **Support this project:** Sign up on StandX using [this referral link](https://standx.com/referral?code=FREQTRADEFR)
 
 Market-making research pipeline for StandX: **collect** live orderbook/trade data, **convert** to backtesting format, and **backtest** the OBI (Order Book Imbalance) strategy with parameter optimization.
 
