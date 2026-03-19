@@ -1,0 +1,5 @@
+# Data collection dependencies (minimal)
+numpy>=1.24,<3
+pandas>=2.0
+pyarrow>=14.0
+websockets>=12.0

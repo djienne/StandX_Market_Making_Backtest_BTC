@@ -1,0 +1,44 @@
+services:
+  data-collector:
+    build:
+      context: ..
+      dockerfile: data_collector/Dockerfile
+    container_name: standx-data-collector
+    restart: unless-stopped
+    volumes:
+      - ../data:/app/data
+      - ../config.json:/app/config.json:ro
+    environment:
+      - TZ=UTC
+      - PYTHONUNBUFFERED=1
+    command: python data_collector.py
+
+  # Optional: Run tests on collected data
+  test-data:
+    build:
+      context: ..
+      dockerfile: data_collector/Dockerfile
+    container_name: standx-test-data
+    volumes:
+      - ../data:/app/data:ro
+      - ../config.json:/app/config.json:ro
+    environment:
+      - TZ=UTC
+    command: python test_data_collector.py --verbose
+    profiles:
+      - test
+
+  # Optional: View collected data
+  read-data:
+    build:
+      context: ..
+      dockerfile: data_collector/Dockerfile
+    container_name: standx-read-data
+    volumes:
+      - ../data:/app/data:ro
+      - ../config.json:/app/config.json:ro
+    environment:
+      - TZ=UTC
+    command: python read_parquet.py --rows 5
+    profiles:
+      - tools

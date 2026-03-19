@@ -1,0 +1,29 @@
+{
+  "search_space": {
+    "vol_to_half_spread": {"min": 0.1, "max": 100.0, "log": true},
+    "skew": {"min": 0.1, "max": 5.0, "log": true},
+    "c1_ticks": {"min": 0.1, "max": 2000, "log": true},
+    "min_half_spread_bps": {"min": 1.0, "max": 1.0001, "log": true}
+  },
+  "optimization": {
+    "n_trials": 10,
+    "study_name": "obi_mm_opt",
+    "min_trades": 3,
+    "objective_metric": "equity"
+  },
+  "backtest": {
+    "data_dir": "data",
+    "max_rows": -1,
+    "max_days": 7,
+    "latency_ns": 1000000,
+    "step_ns": 100000000,
+    "window_steps": 6000,
+    "update_interval_steps": 50,
+    "order_qty_dollar": 100.0,
+    "max_position_dollar": 400.0,
+    "looking_depth": 0.025,
+    "grid_num": 1,
+    "record_every": 100,
+    "roi_pad": 0.02
+  }
+}
