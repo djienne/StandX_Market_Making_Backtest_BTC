@@ -9,7 +9,7 @@ End-to-end market-making pipeline for StandX: **collect** live orderbook/trade d
 ## Pipeline Overview
 
 ```
-data_collector.py          convert_standx.py         backtest_standx_OBI*.py
+data_collector/            convert_standx.py         backtest_standx_OBI*.py
  (WebSocket → Parquet)  →   (Parquet → NPZ)      →   (NPZ → backtest results)
 ```
 
@@ -136,7 +136,7 @@ python read_parquet.py --orderbook --rows 5
 python test_data_collector.py --verbose
 ```
 
-### 3. Run Backtest
+### 3. Run Backtest (from project root)
 
 ```bash
 # Converts parquet → NPZ automatically, then runs OBI backtest
