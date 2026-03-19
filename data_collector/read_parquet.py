@@ -74,7 +74,7 @@ def display_orderbook_sample(df: pd.DataFrame, num_rows: int = 5):
             bid_p = format_price(bid_prices[i]) if i < len(bid_prices) else ""
             bid_q = format_qty(bid_qtys[i]) if i < len(bid_qtys) else ""
             ask_p = format_price(ask_prices[i]) if i < len(ask_prices) else ""
-            ask_q = format_qty(ask_qtys[i]) if i < len(ask_prices) else ""
+            ask_q = format_qty(ask_qtys[i]) if i < len(ask_qtys) else ""
 
             print(f"  {bid_p:<14} {bid_q:<14} | {ask_p:<14} {ask_q:<14}")
 
