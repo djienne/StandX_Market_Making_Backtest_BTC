@@ -23,9 +23,21 @@ AUTH_API_URL = "https://api.standx.com"
 PERPS_API_URL = "https://perps.standx.com"
 
 # WebSocket settings
-WS_PING_INTERVAL = 20
-WS_PING_TIMEOUT = 10
-RECONNECT_DELAY = 5
+#
+# Do NOT enable client-initiated keepalive pings. StandX sends us a Ping frame every
+# 10s and expects a Pong, which the websockets library answers automatically; it never
+# pongs a ping the client sends. Any client keepalive therefore times out and tears the
+# connection down on schedule - at ping_interval + ping_timeout, every time. With
+# ping_interval=20/ping_timeout=10 this cost roughly 18.5% of every hour of data.
+# The server only disconnects us if it sees no Ping/Pong response within 5 minutes.
+# See https://docs.standx.com/standx-api/perps-ws
+WS_PING_INTERVAL = None
+WS_PING_TIMEOUT = None
+
+# Kept short because reconnects are now rare: the server closes each connection at its
+# 24h lifespan limit, and run() backs off exponentially from here up to
+# BaseWebSocketClient.MAX_RECONNECT_DELAY if the endpoint is actually down.
+RECONNECT_DELAY = 1
 
 # Channels
 CHANNEL_DEPTH_BOOK = "depth_book"
@@ -192,8 +204,8 @@ class BaseWebSocketClient(ABC):
     def __init__(
         self,
         url: str = WS_STREAM_URL,
-        ping_interval: int = WS_PING_INTERVAL,
-        ping_timeout: int = WS_PING_TIMEOUT,
+        ping_interval: Optional[int] = WS_PING_INTERVAL,
+        ping_timeout: Optional[int] = WS_PING_TIMEOUT,
         reconnect_delay: int = RECONNECT_DELAY
     ):
         self.url = url

@@ -18,6 +18,10 @@
 - Connection terminates after **5 minutes** without Pong response
 - Most modern browsers/libraries handle this automatically
 
+> **Do not send client-initiated pings.** The server does not reply to them, so any
+> client-side keepalive will time out and close the connection on its own schedule.
+> Answering the server's pings is all that is required.
+
 **Timeout Error:**
 ```json
 {
@@ -25,6 +29,11 @@
   "message": "disconnecting due to not receive Pong within 5 minute period"
 }
 ```
+
+### Connection Lifespan
+
+- A single connection lasts at most **24 hours**, after which the server closes it
+- Clients must reconnect and resubscribe when this happens
 
 ---
 
