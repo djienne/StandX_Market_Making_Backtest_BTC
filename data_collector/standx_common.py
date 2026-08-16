@@ -453,22 +453,42 @@ def flush_buffer_to_parquet(
 class Config:
     """Configuration loader from JSON file."""
 
+    @staticmethod
+    def _locate_config(config_path: str) -> Path:
+        """
+        Find config.json, trying in order:
+          1. the path as given (relative to the working directory)
+          2. next to this module (standalone layout)
+          3. one level up (vendored data_collector/ layout, config at repo root)
+        """
+        candidate = Path(config_path)
+        if candidate.exists():
+            return candidate.resolve()
+
+        module_dir = Path(__file__).resolve().parent
+        for fallback in (module_dir / candidate.name,
+                         module_dir.parent / candidate.name):
+            if fallback.exists():
+                return fallback.resolve()
+
+        raise FileNotFoundError(
+            f"Could not find {candidate.name} in {Path.cwd()}, {module_dir}, "
+            f"or {module_dir.parent}"
+        )
+
     def __init__(self, config_path: str = "config.json"):
-        config_file = Path(config_path)
-        if not config_file.exists():
-            # Search one level up (e.g., running from data_collector/ subfolder)
-            parent_config = Path(__file__).resolve().parent.parent / config_file.name
-            if parent_config.exists():
-                config_file = parent_config
-        config_file = config_file.resolve()
+        config_file = self._locate_config(config_path)
         with open(config_file, 'r') as f:
             data = json.load(f)
 
         self.symbols: List[str] = data.get("symbols", ["BTC-USD"])
         self.orderbook_levels: int = data.get("orderbook_levels", 20)
         self.flush_interval_seconds: int = data.get("flush_interval_seconds", 5)
-        # Resolve output_dir relative to the config file's directory
-        self.output_dir: Path = (config_file.parent / data.get("output_dir", "./data")).resolve()
+        # Resolve output_dir relative to the config file, not the working directory,
+        # so the collector writes to the same place regardless of where it is launched.
+        self.output_dir: Path = (
+            config_file.parent / data.get("output_dir", "./data")
+        ).resolve()
 
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)

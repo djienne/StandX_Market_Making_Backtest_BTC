@@ -4,11 +4,12 @@ Usage: python read_parquet.py [--orderbook] [--trades] [--rows N] [--all]
 """
 
 import argparse
-import json
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+
+from standx_common import Config
 
 
 def format_price(price):
@@ -201,8 +202,7 @@ def main():
     )
     parser.add_argument(
         "--data-dir", "-d",
-        default="../data",
-        help="Data directory (default: ../data)"
+        help="Data directory (default: output_dir from config.json)"
     )
     parser.add_argument(
         "--file", "-f",
@@ -215,7 +215,9 @@ def main():
     if not args.orderbook and not args.trades and not args.all and not args.file:
         args.all = True
 
-    data_dir = Path(args.data_dir)
+    # Fall back to the configured output_dir, which Config resolves relative to
+    # config.json - so this works from either the standalone or vendored layout.
+    data_dir = Path(args.data_dir) if args.data_dir else Config().output_dir
 
     if args.file:
         # Read specific file

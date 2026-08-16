@@ -12,6 +12,8 @@ COPY standx_common.py .
 COPY data_collector.py .
 COPY read_parquet.py .
 COPY test_data_collector.py .
+# config.json is intentionally not baked in - docker-compose bind-mounts it read-only,
+# which keeps one Dockerfile valid for both the standalone and vendored layouts.
 
 # Create data directory
 RUN mkdir -p /app/data
